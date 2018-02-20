@@ -1,0 +1,11 @@
+{
+    "inputMessageMetadata": {
+        "messagePayload": {
+            "connectorName": "#_custom_mule_metadata_type_#",
+            "typeId": "IATA"
+        }
+    },
+    "outputMessageMetadata": {},
+    "id": "adbd6162-4e48-4058-b230-3bf07dd2c3d4",
+    "version": "5.2.0.0"
+}

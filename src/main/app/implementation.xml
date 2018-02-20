@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+
+    <http:request-config name="KLM_Connector" host="${klm.host}" port="${klm.port}" basePath="${klm.path}" doc:name="HTTP Request Configuration"/>
+    <http:request-config name="OpenWeatherMap_Connector" host="${openweather.host}" port="${openweather.port}" doc:name="HTTP Request Configuration"/>
+    <http:request-config name="IATA_ORG_Connector" host="${iata.host}" port="${iata.port}" basePath="${iata.path}" doc:name="HTTP Request Configuration"/>
+    <context:property-placeholder location="city-${env}.properties"/>
+    
+    <flow name="getFlights" tracking:enable-default-events="true">
+        <set-variable variableName="originAirportCode" value="AMS" doc:name="setOriginAirportCode"/>
+        <http:request config-ref="KLM_Connector" path="/flightstatuses" method="GET" doc:name="call KLM Flight API">
+            <http:request-builder>
+                <http:query-param paramName="originAirportCode" value="#[flowVars.originAirportCode]"/>
+                <http:query-param paramName="destinationAirportCode" value="#[message.inboundProperties.'http.uri.params'.destination]"/>
+            </http:request-builder>
+        </http:request>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger message="Airport not found or connection cannot be established" level="INFO" doc:name="Log error message into the console"/>
+            <set-property propertyName="http.status" value="500" doc:name="Set http.status to 500"/>
+            <set-payload value="Airport not found or connection cannot be established
+
+Current payload:
+#[payload]" doc:name="Set Payload with error message"/>
+        </catch-exception-strategy>
+    </flow>
+    
+    <flow name="getWeather">
+        <http:request config-ref="IATA_ORG_Connector" path="/airports" method="GET" doc:name="call IATA API">
+            <http:request-builder>
+                <http:query-param paramName="api_key" value="${iata.apikey}"/>
+                <http:query-param paramName="code" value="#[message.inboundProperties.'http.uri.params'.destination]"/>
+            </http:request-builder>
+        </http:request>
+        <dw:transform-message doc:name="retrieve location from Airport Code" metadata:id="adbd6162-4e48-4058-b230-3bf07dd2c3d4">
+            <dw:input-payload mimeType="application/json" doc:sample="IATA_exam.json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+(payload.response[0].name splitBy "-")[0]]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="#[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <http:request config-ref="OpenWeatherMap_Connector" path="/data/2.5/weather" method="GET" doc:name="call weather API">
+            <http:request-builder>
+                <http:query-param paramName="q" value="#[payload]"/>
+                <http:query-param paramName="APPID" value="${openweather.apikey}"/>
+            </http:request-builder>
+        </http:request>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger message="Exception thrown..." level="INFO" doc:name="Logger"/>
+            <set-property propertyName="http.status" value="#[message.inboundProperties.'http.status']" doc:name="Property"/>
+            <logger message="Display message: #[message]" level="INFO" doc:name="Logger"/>
+        </catch-exception-strategy>
+    </flow>
+</mule>
